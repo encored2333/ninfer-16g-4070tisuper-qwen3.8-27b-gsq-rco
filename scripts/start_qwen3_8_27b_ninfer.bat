@@ -1,25 +1,28 @@
 @echo off
 setlocal enabledelayedexpansion
 REM ============================================================
-REM NInfer + Qwen3.8-27B (GSQ-RCO IQ3_S) 启动脚本模板
-REM   RTX 4070 Ti SUPER 16GB 实测调优值；换显卡/路径自行调整。
-REM   详细参数解释见 docs/部署文档.md 第 7 节。
+REM NInfer + Qwen3.8-27B (GSQ-RCO IQ3_S) start script template
+REM   Tuned on RTX 4070 Ti SUPER 16GB. See docs/deployment guide
+REM   section 7 for every parameter.
 REM
-REM   使用前修改下面「路径区」三行为本机实际值。
-REM   功能：启动前自动杀死残留 ninfer-serve 实例与端口占用进程。
+REM   NOTE: keep this file ASCII-only! Chinese comments saved as
+REM   UTF-8 get shredded by cmd (GBK codepage) and break set/cd
+REM   lines silently. Edit the "paths" block below.
+REM   Behavior: kills stale ninfer-serve instances and any listener
+REM   on the port before starting.
 REM ============================================================
 
-REM ---------- 路径区（按本机修改） ----------
+REM ---------- paths (edit for your machine) ----------
 set "ENGINE_DIR=D:\ninfer\runtime\engine"
 set "MODEL_FILE=D:\ninfer\converted-models\Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.ninfer"
 set "PORT=8081"
 
-REM ---------- 显卡区 ----------
-REM CUDA 默认按 FastestFirst 排序（与 nvidia-smi 总线序相反）！
-REM 单 4070 Ti SUPER 用 0；多卡请先用启动日志里的 GPU 名字核对。
+REM ---------- GPU ----------
+REM CUDA sorts devices fastest-first (REVERSE of nvidia-smi order)!
+REM Single 4070 Ti SUPER -> 0. Verify via the GPU name in startup log.
 set "CUDA_VISIBLE_DEVICES=0"
 
-REM ---------- 杀残留 ----------
+REM ---------- kill stale instances ----------
 taskkill /F /IM ninfer-serve.exe >nul 2>&1
 set "PORTBUSY="
 for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R /C:":%PORT% .*LISTENING"') do set "PORTBUSY=%%P"
@@ -33,6 +36,8 @@ cd /d "%ENGINE_DIR%"
 echo Starting NInfer engine ...
 echo API: http://127.0.0.1:%PORT%/v1
 
+REM strict = verified VRAM residency; TEXT-ONLY (see vision template
+REM for the image/video build, which must use default policy).
 ninfer-serve.exe "%MODEL_FILE%" ^
   --model-id qwen3.8-27b ^
   --max-context 81920 --prefill-chunk 256 ^

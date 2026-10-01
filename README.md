@@ -20,6 +20,7 @@ RTX 40 系用户没有官方预编译引擎可用（现成引擎只含 RTX 50 �
 | TTFT 短对话 | — | **0.35 s** | — |
 
 模型配置：Qwen3.8-27B **ISTA 变体** · GSQ-RCO 逐张量混精量化（IQ3_S 主体 + attention key / mlp down 用 IQ4_XS · MTP 模块 Q6_K · proposal 头 Q4_K）
+另有**视觉版**制品（text,mtp,vision，1176 张量）：支持图片/视频输入，实测发图识别通过（详见性能实测文档）。
 运行配置：strict 显存严格驻留 · **KV 池 97,280 tokens（rk8v4）** · 逻辑上下文 80K · MTP×4 自适应草稿 + ngram 查找
 
 > 相比官方软件包的 Swift XXS 档（IQ3_XXS 主体），ISTA 的 IQ3_S 主体困惑度更优
@@ -35,6 +36,8 @@ RTX 40 系用户没有官方预编译引擎可用（现成引擎只含 RTX 50 �
 ├── scripts/
 │   ├── fetch-asset.bat            vcpkg 资产下载器（代理→镜像→直连三级回退，国内网络救星）
 │   ├── build-sm89.bat             一键 CMake 配置 + CUDA 算子编译 + nvprune + 链接
+│   ├── start_qwen3_8_27b_ninfer.bat        启动模板（文本版，strict，80K）
+│   ├── start_qwen3_8_27b_ninfer_vision.bat 启动模板（视觉版，支持图片/视频，48K）
 │   ├── resume-sm89.bat            低并发续编（32GB 内存机器防 OOM）
 │   └── validate/
 │       ├── bench.py               OpenAI 兼容接口基准测试（quick/full 两档，纯标准库）
