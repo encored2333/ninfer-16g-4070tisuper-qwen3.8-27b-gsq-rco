@@ -53,6 +53,12 @@ RTX 40 系用户没有官方预编译引擎可用（现成引擎只含 RTX 50 �
 **模型权重（11.6 GB .ninfer）** 不入库，请按 [模型转换指南](docs/模型转换指南.md) 从
 HuggingFace 原版 GGUF 自行转换（CPU 上 1 分钟内完成）。
 
+## 相关仓库：256K 长上下文 / agent 工作负载
+
+本仓库的 97K 是无损全量档的实测上限。需要 **256K 上下文、多轮追问秒回、agent 工作负载**
+（KVMem 环完全修复版 + 防工具调用方言漂移模板 + dsh 参数表），见姊妹仓库
+[encored2333/KVMem-16g-4070tisuper-qwen3.8-27b-gsq-rco](https://github.com/encored2333/KVMem-16g-4070tisuper-qwen3.8-27b-gsq-rco)。
+
 ## 上下文上限实测（128K 宣称 vs 本卡现实）
 
 上游软件包宣称 S 档 128K——**在这张卡上装不下**，启动即 FATAL（权重后可用 3.7GB < 128K 池
