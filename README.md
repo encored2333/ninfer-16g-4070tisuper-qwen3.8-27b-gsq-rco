@@ -68,6 +68,15 @@ D:\ninfer\runtime\engine\ninfer-serve.exe <模型.ninfer> ^
 :: API: http://127.0.0.1:8081/v1 （OpenAI / Anthropic 兼容）
 ```
 
+## KVMem 环：256K 上下文 + Agent 工作负载（v1.1 新增）
+
+在 16GB 卡上把逻辑上下文拓到 **256K**（设备池仅 75,776 token，其余宿主层），
+并修复上游补丁的三道硬门使 **MTP 投机与超池复用同时工作**；按上游防治文档调优
+agent 参数后，dsh 等 agent 客户端 10 轮疲劳测试零畸形。
+
+详见 [KVMem-完全修复与Agent调优.md](docs/KVMem-完全修复与Agent调优.md)
+（含 dsh 客户端参数表、三道门源码修复、行为边界表）。
+
 ## 40 系 / 其他显卡适配速查
 
 | 你的显卡 | 引擎二进制 | 需要做的事 |

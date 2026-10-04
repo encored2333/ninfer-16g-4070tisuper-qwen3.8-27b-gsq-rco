@@ -1,25 +1,23 @@
 @echo off
 setlocal enabledelayedexpansion
 REM ============================================================
-REM NInfer + Qwen3.8-27B (GSQ-RCO IQ3_S) start script template
-REM   Tuned on RTX 4070 Ti SUPER 16GB. See docs/deployment guide
-REM   section 7 for every parameter.
-REM
-REM   NOTE: keep this file ASCII-only! Chinese comments saved as
-REM   UTF-8 get shredded by cmd (GBK codepage) and break set/cd
-REM   lines silently. Edit the "paths" block below.
-REM   Behavior: kills stale ninfer-serve instances and any listener
-REM   on the port before starting.
+REM Qwen3.8-27B NInfer engine - VISION build (image/video input)
+REM   Converted with --components text,mtp,vision (includes mmproj).
+REM   NOTE: strict residency policy is TEXT-ONLY (engine rejects it
+REM   with --vision regardless of residency). Vision build therefore
+REM   uses default policy + auto KV + headroom; context 64K.
+REM   To trade context for speed: --vision-residency resident +
+REM   --max-context 40960 (still default policy).
+REM   Runs INSTEAD of start_qwen3_8_27b_gsq_ninfer.bat (same port
+REM   8081 / same model id qwen3.8-27b). Kill-then-start behavior.
 REM ============================================================
 
 REM ---------- paths (edit for your machine) ----------
 set "ENGINE_DIR=D:\ninfer\runtime\engine"
-set "MODEL_FILE=D:\ninfer\converted-models\Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.ninfer"
+set "MODEL_FILE=D:\ninfer\converted-models\Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp-vision.ninfer"
 set "PORT=8081"
 
-REM ---------- GPU ----------
-REM CUDA sorts devices fastest-first (REVERSE of nvidia-smi order)!
-REM Single 4070 Ti SUPER -> 0. Verify via the GPU name in startup log.
+REM CUDA sorts fastest-first: 0 = RTX 4070 Ti SUPER here
 set "CUDA_VISIBLE_DEVICES=0"
 
 REM ---------- kill stale instances ----------
@@ -33,20 +31,18 @@ if defined PORTBUSY (
 )
 
 cd /d "%ENGINE_DIR%"
-echo Starting NInfer engine ...
+echo Starting NInfer engine (VISION) ...
 echo API: http://127.0.0.1:%PORT%/v1
 
-REM strict = verified VRAM residency; TEXT-ONLY (see vision template
-REM for the image/video build, which must use default policy).
 ninfer-serve.exe "%MODEL_FILE%" ^
   --model-id qwen3.8-27b ^
-  --max-context 97000 --prefill-chunk 256 ^
-  --cuda-memory-policy strict --kv-dtype rk8v4 --host-cache-mib 6144 ^
+  --vision --vision-residency cpu ^
+  --max-context 49152 --prefill-chunk 256 ^
+  --cuda-memory-policy default --kv-capacity auto --kv-headroom-mib 768 --kv-dtype rk8v4 --host-cache-mib 6144 ^
   --default-max-tokens 0 ^
   --spec mtp --draft-tokens 4 --adaptive-mtp --lookup-ngram 31 ^
   --temperature 1 --top-p 0.95 --top-k 20 --min-p 0 ^
   --preserve-thinking --default-reasoning-effort xhigh ^
-  --default-thinking-budget 16384 ^
   --port %PORT% --log-colours off
 
 echo.
