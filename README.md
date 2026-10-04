@@ -13,7 +13,7 @@ RTX 40 系用户没有官方预编译引擎可用（现成引擎只含 RTX 50 �
 | 指标 | 5070 Ti 官方参考 | 4070 Ti SUPER 本机实测 | 达成率 |
 |---|---|---|---|
 | 解码 @52K 输入 | 99.4 – 105.6 tok/s | **112.0 tok/s** | **109%** |
-| 解码 短上下文专项 | ~123.6 tok/s | **139.7 tok/s** | ~113% |
+| 解码 短上下文专项 | 约123.6 tok/s | **139.7 tok/s** | 约113% |
 | Prefill @52K 输入 | 1,695 tok/s | **1,454.9 tok/s** | 86% |
 | Prefill @3.3K 输入 | — | **1,664.6 tok/s** | — |
 | TTFT @52K 输入 | 36.9 s | **35.7 s** | ≈持平 |
@@ -68,7 +68,7 @@ HuggingFace 原版 GGUF 自行转换（CPU 上 1 分钟内完成）。
 |---|---|---|---|
 | rk8v4 + 131,072 请求 | — | ❌ FATAL | 官方宣称值在本卡不成立 |
 | rk8v4 | 97,280 | **97,000**（本仓库默认）| 质量优先，strict 顶格 |
-| rk4v4 | ~141,760 | **~119.5K** | KV 精度减半换长度 |
+| rk4v4 | 约141,760 | **约119.5K** | KV 精度减半换长度 |
 | rk8v4 + 桌面占用大时 | ~3.7GB 可用 | 保守 80K | 显存基线随环境浮动 |
 
 256K（模型原生上限）见姊妹仓库 [KVMem-16g-4070tisuper](https://github.com/encored2333/KVMem-16g-4070tisuper-qwen3.8-27b-gsq-rco)
@@ -105,7 +105,7 @@ D:\ninfer\runtime\engine\ninfer-serve.exe <模型.ninfer> ^
 
 - Windows 11，NVIDIA 驱动 ≥ R580（实测 616.56）
 - 16GB 显存（12GB 可跑，上下文相应缩减）；系统内存建议 32GB（编译 CUDA 算子峰值较高，需 `-j 8` 防溢出，文档有说明）
-- 磁盘 ≥ 60GB：源码/构建 ~15GB + 模型 GGUF 12GB + .ninfer 11.6GB + 依赖缓存 ~10GB
+- 磁盘 ≥ 60GB：源码/构建 约15GB + 模型 GGUF 12GB + .ninfer 11.6GB + 依赖缓存 约10GB
 - 工具链：VS2022 Build Tools (MSVC v143 **14.44.35207**)、CUDA Toolkit **13.4**、CMake **≥4.4.3**、Ninja、Git、Python 3.11（转换用）、vcpkg（classic 模式）
 
 ## 致谢与来源
