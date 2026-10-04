@@ -21,7 +21,7 @@ RTX 40 系用户没有官方预编译引擎可用（现成引擎只含 RTX 50 �
 
 模型配置：Qwen3.8-27B **ISTA 变体** · GSQ-RCO 逐张量混精量化（IQ3_S 主体 + attention key / mlp down 用 IQ4_XS · MTP 模块 Q6_K · proposal 头 Q4_K）
 另有**视觉版**制品（text,mtp,vision，1176 张量）：支持图片/视频输入，实测发图识别通过（详见性能实测文档）。
-运行配置：strict 显存严格驻留 · **KV 池 97,280 tokens（rk8v4）** · 逻辑上下文 80K · MTP×4 自适应草稿 + ngram 查找
+运行配置：strict 显存严格驻留 · **KV 池 97,280 tokens（rk8v4）· 逻辑上下文 97K** · MTP×4 自适应草稿 + ngram 查找 · 思考预算 16,384
 
 > 相比官方软件包的 Swift XXS 档（IQ3_XXS 主体），ISTA 的 IQ3_S 主体困惑度更优
 > （上游实测 WikiText-2 PPL 7.071，优于官方 IQ3_S 产物的 7.286）。
@@ -53,6 +53,21 @@ RTX 40 系用户没有官方预编译引擎可用（现成引擎只含 RTX 50 �
 **模型权重（11.6 GB .ninfer）** 不入库，请按 [模型转换指南](docs/模型转换指南.md) 从
 HuggingFace 原版 GGUF 自行转换（CPU 上 1 分钟内完成）。
 
+## 上下文上限实测（128K 宣称 vs 本卡现实）
+
+上游软件包宣称 S 档 128K——**在这张卡上装不下**，启动即 FATAL（权重后可用 3.7GB < 128K 池
+需求 5.3GB）。实测演进：
+
+| 配置 | KV 池 | 逻辑上下文 | 说明 |
+|---|---|---|---|
+| rk8v4 + 131,072 请求 | — | ❌ FATAL | 官方宣称值在本卡不成立 |
+| rk8v4 | 97,280 | **97,000**（本仓库默认）| 质量优先，strict 顶格 |
+| rk4v4 | ~141,760 | **~119.5K** | KV 精度减半换长度 |
+| rk8v4 + 桌面占用大时 | ~3.7GB 可用 | 保守 80K | 显存基线随环境浮动 |
+
+256K（模型原生上限）见姊妹仓库 [KVMem-16g-4070tisuper](https://github.com/encored2333/KVMem-16g-4070tisuper-qwen3.8-27b-gsq-rco)
+（KVMem 环完全修复版：设备池 75,776 + 宿主层分页，代价是近似可见性与慢 3~7 倍的冷预填）。
+
 ## 快速开始（已编译机器，5 分钟）
 
 ```bat
@@ -61,9 +76,10 @@ HuggingFace 原版 GGUF 自行转换（CPU 上 1 分钟内完成）。
 :: 3. 启动
 set CUDA_VISIBLE_DEVICES=0
 D:\ninfer\runtime\engine\ninfer-serve.exe <模型.ninfer> ^
-  --model-id qwen3.8-27b --max-context 81920 --prefill-chunk 256 ^
+  --model-id qwen3.8-27b --max-context 97000 --prefill-chunk 256 ^
   --cuda-memory-policy strict --kv-dtype rk8v4 --host-cache-mib 6144 ^
-  --default-max-tokens 0 --spec mtp --draft-tokens 4 --adaptive-mtp --lookup-ngram 31 ^
+  --default-max-tokens 0 --default-thinking-budget 16384 ^
+  --spec mtp --draft-tokens 4 --adaptive-mtp --lookup-ngram 31 ^
   --port 8081
 :: API: http://127.0.0.1:8081/v1 （OpenAI / Anthropic 兼容）
 ```
