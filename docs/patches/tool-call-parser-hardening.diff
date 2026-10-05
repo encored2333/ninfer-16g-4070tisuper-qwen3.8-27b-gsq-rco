@@ -1,0 +1,733 @@
+diff --git a/src/models/qwen3_5/frontend/tool_call_parser.cpp b/src/models/qwen3_5/frontend/tool_call_parser.cpp
+index 6c2541c..abfae15 100644
+--- a/src/models/qwen3_5/frontend/tool_call_parser.cpp
++++ b/src/models/qwen3_5/frontend/tool_call_parser.cpp
+@@ -88,6 +88,17 @@ std::string rtrim_format_whitespace(std::string_view text) {
+     return std::string(text.substr(0, end));
+ }
+ 
++
++// LOCAL (batch 1): bytes of an unclosed markdown code fence that ends the content directly before
++// a tool-call region; 0 when there is none. Visibility only - no byte is removed.
++std::size_t unclosed_fence_prefix_bytes(std::string_view prefix) {
++    const std::size_t newline = prefix.find_last_of('\n');
++    const std::size_t begin   = newline == std::string_view::npos ? 0 : newline + 1;
++    const std::string_view line = trim_format_whitespace(prefix.substr(begin));
++    return line.starts_with("```") ? prefix.size() - begin : 0;
++}
++
++
+ void skip_format_whitespace(std::string_view text, std::size_t& pos) {
+     while (pos < text.size() && is_format_whitespace(text[pos])) { ++pos; }
+ }
+@@ -163,6 +174,11 @@ std::string_view tag_name(std::string_view header) {
+         }
+         if (attribute == "name") { return trim_format_whitespace(value); }
+     }
++    // LOCAL FIX (batch 2, A5): a bare-word header (`<function bash>`) names the function directly.
++    const std::string_view bare = trim_format_whitespace(header);
++    if (!bare.empty() && bare.find_first_of(" \t\r\n") == std::string_view::npos) {
++        return bare;
++    }
+     return {};
+ }
+ 
+@@ -202,15 +218,37 @@ bool inside_open_wrapper(std::string_view text, std::size_t pos) {
+     return unclosed(kToolOpen, kToolClose) || unclosed(kFunctionCallsOpen, kFunctionCallsClose);
+ }
+ 
+-// The first region opener at or after `from`.
+-std::size_t find_tool_marker(std::string_view text, std::size_t from) {
++// LOCAL FIX (batch 2, E3): the model writes examples of the call format into its prose. A bare
++// <function...> tag quoted that way used to be read as a real call, so an explanation could
++// execute. It is an attempt only at the very start of the response or when it opens a paragraph
++// (a blank line before it); a <tool_call>/<function_calls> wrapper always opens a region.
++bool bare_function_starts_a_region(std::string_view text, std::size_t pos) {
++    if (pos == 0 || !starts_with_at(text, pos, "<function")) { return true; }
++    std::size_t cursor   = pos;
++    std::size_t newlines = 0;
++    while (cursor > 0 && is_format_whitespace(text[cursor - 1])) {
++        if (text[cursor - 1] == '\n') { ++newlines; }
++        --cursor;
++    }
++    return newlines >= 2;
++}
++
++// The first region opener at or after `from`. A bare <function...> tag inside prose is skipped so
++// it can neither run nor hide a real call later in the output; `prose_skipped` counts the skips.
++std::size_t find_tool_marker(std::string_view text, std::size_t from,
++                             std::uint32_t* prose_skipped = nullptr) {
+     for (std::size_t pos = text.find('<', from); pos != std::string_view::npos;
+          pos             = text.find('<', pos + 1)) {
+         if (!opens_marker(text.substr(pos))) { continue; }
+-        if (starts_with_at(text, pos, kToolOpen) || starts_with_at(text, pos, kFunctionCallsOpen) ||
+-            !inside_open_wrapper(text, pos)) {
+-            return pos;
++        if (!starts_with_at(text, pos, kToolOpen) &&
++            !starts_with_at(text, pos, kFunctionCallsOpen) && inside_open_wrapper(text, pos)) {
++            continue;
++        }
++        if (!bare_function_starts_a_region(text, pos)) {
++            if (prose_skipped != nullptr) { ++*prose_skipped; }
++            continue;
+         }
++        return pos;
+     }
+     return std::string_view::npos;
+ }
+@@ -356,7 +394,26 @@ const Contract::Tool* find_tool_contract(const Contract& contract, std::string_v
+     const auto tool =
+         std::find_if(contract.tools.begin(), contract.tools.end(),
+                      [&](const auto& candidate) { return candidate.name == tool_name; });
+-    return tool == contract.tools.end() ? nullptr : &*tool;
++    if (tool != contract.tools.end()) { return &*tool; }
++    // LOCAL FIX (batch 2, E1): a case-drifted name that matches exactly ONE declared tool
++    // resolves to it (the declared spelling is what the caller goes on to emit). An ambiguous
++    // match stays undeclared.
++    const Contract::Tool* unique = nullptr;
++    for (const auto& candidate : contract.tools) {
++        if (candidate.name.size() != tool_name.size()) { continue; }
++        bool equal = true;
++        for (std::size_t i = 0; i < candidate.name.size(); ++i) {
++            char a = candidate.name[i];
++            char b = tool_name[i];
++            if (a >= 'A' && a <= 'Z') { a = static_cast<char>(a + ('a' - 'A')); }
++            if (b >= 'A' && b <= 'Z') { b = static_cast<char>(b + ('a' - 'A')); }
++            if (a != b) { equal = false; break; }
++        }
++        if (!equal) { continue; }
++        if (unique != nullptr) { return nullptr; }
++        unique = &candidate;
++    }
++    return unique;
+ }
+ 
+ const Contract::Parameter* find_parameter_contract(const Contract::Tool& tool,
+@@ -383,6 +440,18 @@ std::string_view remove_parameter_framing_newlines(std::string_view text) {
+     return text.substr(begin, end - begin);
+ }
+ 
++// LOCAL (batch 2, A8): <![CDATA[ ... ]]> wrapping a parameter value is markup, not payload.
++std::string_view strip_cdata_wrapping(std::string_view value) {
++    const std::string_view trimmed = trim_format_whitespace(value);
++    constexpr std::string_view kOpen  = "<![CDATA[";
++    constexpr std::string_view kClose = "]]>";
++    if (trimmed.size() >= kOpen.size() + kClose.size() && trimmed.starts_with(kOpen) &&
++        trimmed.ends_with(kClose)) {
++        return trimmed.substr(kOpen.size(), trimmed.size() - kOpen.size() - kClose.size());
++    }
++    return value;
++}
++
+ bool ascii_case_equal(std::string_view text, std::string_view lowercase) {
+     if (text.size() != lowercase.size()) { return false; }
+     for (std::size_t i = 0; i < text.size(); ++i) {
+@@ -561,6 +630,10 @@ public:
+         return duplicate_parameters_repaired_;
+     }
+ 
++    [[nodiscard]] std::uint32_t ambiguous_value_closers() const noexcept {
++        return ambiguous_value_closers_;
++    }
++
+     FallbackReason parse(std::vector<RawToolCall>& calls) const {
+         std::size_t pos = 0;
+         for (;;) {
+@@ -607,7 +680,12 @@ private:
+         if (failure != FallbackReason::None) { return failure; }
+         skip_format_whitespace(text_, pos);
+         if (consume(pos, kToolClose)) { return FallbackReason::None; }
+-        if (lenient_ && (pos == text_.size() || starts_with_at(text_, pos, kToolOpen))) {
++        // LOCAL FIX (batch 1, C1): one wrapper carrying several functions. The strict pass rejects
++        // it; the lenient pass now closes a call when another function opener follows, so the
++        // recovery loop below can keep reading the sibling calls instead of replacing the whole
++        // wrapper with one malformed placeholder and dropping the first call's parameters.
++        if (lenient_ && (pos == text_.size() || starts_with_at(text_, pos, kToolOpen) ||
++                         tag_form_at(text_, pos, kFunctionForms) != nullptr)) {
+             return FallbackReason::None;
+         }
+         return FallbackReason::MalformedStructure;
+@@ -616,12 +694,21 @@ private:
+     FallbackReason parse_function(std::size_t& pos, RawToolCall& call) const {
+         const TagForm* form = tag_form_at(text_, pos, kFunctionForms);
+         if (form == nullptr) { return FallbackReason::MalformedStructure; }
+-        std::size_t tag_end = 0;
+-        call.name           = tag_name(tag_header(text_, pos, *form, tag_end));
++        std::size_t tag_end          = 0;
++        const std::string_view header = tag_header(text_, pos, *form, tag_end);
++        call.name                    = tag_name(header);
+         if (tag_end == std::string_view::npos ||
+             !valid_function_name(call.name, max_name_length_)) {
+             return FallbackReason::InvalidToolName;
+         }
++        // LOCAL FIX (batch 2, A5): a bare-word header carries no `name=` attribute and no `=`, so
++        // the word is only a name when it names a declared tool. Any other bare word is prose
++        // wearing a function tag and is reported as an invalid name, as it was before A5.
++        if (!lenient_ && contract_.enforce_declared_names &&
++            header.find('=') == std::string_view::npos &&
++            find_tool_contract(contract_, call.name) == nullptr) {
++            return FallbackReason::InvalidToolName;
++        }
+         if (!lenient_ && contract_.enforce_declared_names &&
+             find_tool_contract(contract_, call.name) == nullptr) {
+             return FallbackReason::UndeclaredTool;
+@@ -656,7 +743,9 @@ private:
+         } else {
+             return FallbackReason::MalformedStructure;
+         }
+-        const std::string_view value = text_.substr(value_begin, value_end - value_begin);
++        // LOCAL FIX (batch 2, A8): <![CDATA[ ... ]]> wrapping a value is markup, not payload.
++        const std::string_view value =
++            strip_cdata_wrapping(text_.substr(value_begin, value_end - value_begin));
+         // A repeated parameter keeps its last value, as JSON object syntax would, rather than
+         // discarding an otherwise well-formed call.
+         const auto existing = std::find_if(call.parameters.begin(), call.parameters.end(),
+@@ -727,7 +816,16 @@ private:
+                 continue;
+             }
+ 
+-            if (depth != 1 || ends_value(close + form.close.size())) { --depth; }
++            if (depth != 1) {
++                --depth;
++            } else if (ends_value(close + form.close.size())) {
++                --depth;
++            } else {
++                // LOCAL FIX (batch 3, D1): a closer that runs on into ordinary text is value text,
++                // so this closer was absorbed. The value stays byte-for-byte, but the ambiguity is
++                // counted instead of passing silently.
++                ++ambiguous_value_closers_;
++            }
+             if (depth == 0) {
+                 value_end = close;
+                 return true;
+@@ -741,6 +839,7 @@ private:
+     const Contract& contract_;
+     bool lenient_;
+     mutable std::uint32_t duplicate_parameters_repaired_ = 0;
++    mutable std::uint32_t ambiguous_value_closers_       = 0;
+ };
+ 
+ GeneratedToolCall normalize_raw_tool_call(const RawToolCall& raw, const Contract& contract,
+@@ -773,7 +872,11 @@ GeneratedToolCall normalize_raw_tool_call(const RawToolCall& raw, const Contract
+     }
+     arguments.push_back('}');
+ 
+-    return GeneratedToolCall{.name = std::string(raw.name), .arguments_json = std::move(arguments)};
++    // LOCAL FIX (batch 2, E1): a resolved contract's declared spelling is what the client sees,
++    // so a case-drift repair answers with a name it declared instead of an unknown one.
++    const std::string_view emitted =
++        tool != nullptr ? std::string_view(tool->name) : std::string_view(raw.name);
++    return GeneratedToolCall{.name = std::string(emitted), .arguments_json = std::move(arguments)};
+ }
+ 
+ ParsedToolCallOutput fallback(const std::string& text, ToolCallParseDiagnostics diagnostics = {}) {
+@@ -785,26 +888,40 @@ ParsedToolCallOutput fallback(const std::string& text, ToolCallParseDiagnostics
+ 
+ // The function a region or call opens, after its wrapper or container opener, or null.
+ const TagForm* opened_function(std::string_view text, std::size_t& pos) {
+-    if (starts_with_at(text, pos, kToolOpen)) {
+-        pos += kToolOpen.size();
+-    } else if (starts_with_at(text, pos, kFunctionCallsOpen)) {
+-        pos += kFunctionCallsOpen.size();
++    // LOCAL FIX (batch 2, A6): the container and the wrapper may nest in either order, so keep
++    // skipping both openers instead of accepting a single one.
++    for (;;) {
++        if (starts_with_at(text, pos, kToolOpen)) {
++            pos += kToolOpen.size();
++        } else if (starts_with_at(text, pos, kFunctionCallsOpen)) {
++            pos += kFunctionCallsOpen.size();
++        } else {
++            break;
++        }
++        skip_format_whitespace(text, pos);
+     }
+-    skip_format_whitespace(text, pos);
+     return tag_form_at(text, pos, kFunctionForms);
+ }
+ 
+ // Markup that never opens a function is prose about tool calls, not an attempt at one. The Qwen
+ // form counts from its opener; another form only with a name, so prose about a <function ...> tag
+ // stays prose.
+-bool region_opens_function(std::string_view region) {
++bool region_opens_function(std::string_view region, const Contract& contract) {
+     std::size_t pos         = 0;
+     const TagForm* function = opened_function(region, pos);
+     if (function == nullptr) { return false; }
+     if (starts_with_at(region, pos, kFunctionOpen)) { return true; }
+-    std::size_t tag_end = 0;
+-    return !tag_name(tag_header(region, pos, *function, tag_end)).empty() &&
+-           tag_end != std::string_view::npos;
++    std::size_t tag_end           = 0;
++    const std::string_view header = tag_header(region, pos, *function, tag_end);
++    const std::string_view name   = tag_name(header);
++    if (name.empty() || tag_end == std::string_view::npos) { return false; }
++    // LOCAL FIX (batch 2, A5): a bare-word header (`<function bash>`) carries no `name=` attribute
++    // and no `=`, so it only counts as an attempt when the word names a declared tool. Any other
++    // bare word is prose about a function tag and stays content.
++    if (header.find('=') == std::string_view::npos) {
++        return find_tool_contract(contract, name) != nullptr;
++    }
++    return true;
+ }
+ 
+ std::string malformed_call_arguments(std::string_view call_text, std::size_t max_name_length) {
+@@ -816,6 +933,10 @@ std::string malformed_call_arguments(std::string_view call_text, std::size_t max
+         const std::string_view name = tag_name(tag_header(call_text, pos, *function, tag_end));
+         if (tag_end != std::string_view::npos && valid_function_name(name, max_name_length)) {
+             arguments["intended_function"] = std::string(name);
++        } else if (tag_end != std::string_view::npos && !name.empty()) {
++            // LOCAL FIX (batch 2, E2): an invalid name still tells the model what it attempted.
++            const std::size_t keep = name.size() < 64 ? name.size() : 64;
++            arguments["intended_function"] = std::string(name.substr(0, keep));
+         }
+     }
+     const std::string_view function_close = function != nullptr ? function->close : kFunctionClose;
+@@ -849,6 +970,8 @@ void recover_tool_calls(std::string_view region, std::size_t max_name_length,
+             pos += kFunctionCallsClose.size();
+             continue;
+         }
++        // NOTE (batch 1): a stray </tool_call> here is NOT skipped - skipping it let prose about a
++        // function tag be read as a real call (pinned by the official tests).
+         if (!opens_call(region, pos)) {
+             out.diagnostics.trailing_content_dropped = true;
+             break;
+@@ -856,18 +979,24 @@ void recover_tool_calls(std::string_view region, std::size_t max_name_length,
+         const std::size_t start = pos;
+         RawToolCall call;
+         const std::uint32_t strict_repaired = strict.duplicate_parameters_repaired();
++        const std::uint32_t strict_ambiguous = strict.ambiguous_value_closers();
+         if (strict.parse_one(pos, call) == FallbackReason::None) {
+             out.diagnostics.duplicate_parameters_repaired +=
+                 strict.duplicate_parameters_repaired() - strict_repaired;
++            out.diagnostics.ambiguous_parameter_closers +=
++                strict.ambiguous_value_closers() - strict_ambiguous;
+             out.tool_calls.push_back(normalize_raw_tool_call(call, contract, out.diagnostics));
+             continue;
+         }
+         pos  = start;
+         call = {};
+-        const std::uint32_t lenient_repaired = lenient.duplicate_parameters_repaired();
++        const std::uint32_t lenient_repaired  = lenient.duplicate_parameters_repaired();
++        const std::uint32_t lenient_ambiguous = lenient.ambiguous_value_closers();
+         if (lenient.parse_one(pos, call) == FallbackReason::None) {
+             out.diagnostics.duplicate_parameters_repaired +=
+                 lenient.duplicate_parameters_repaired() - lenient_repaired;
++            out.diagnostics.ambiguous_parameter_closers +=
++                lenient.ambiguous_value_closers() - lenient_ambiguous;
+             ++out.diagnostics.recovered_call_count;
+             out.tool_calls.push_back(normalize_raw_tool_call(call, contract, out.diagnostics));
+             continue;
+@@ -942,26 +1071,117 @@ std::string structured_tool_call_format(const ToolCallOutputContract& contract)
+         .dump();
+ }
+ 
++// LOCAL (batch 2, A1-A4): lexicon repair for a region every strict attempt rejected. Two passes,
++// both position-gated to TAG BOUNDARIES (region start, or after a '>' with only whitespace
++// between), so prose and parameter values are never touched:
++//   1. drop `<|...|>` control-token residue sitting right before an opener,
++//   2. complete a bare `function=`/`invoke=`/`parameter=`/`param=` opener with its '<'.
++// The repaired region is returned only when it then opens a function whose name is declared
++// (exact, or the unique case-insensitive match of E1); empty means "leave everything as it was".
++std::string repair_tool_region(std::string_view region, const Contract& contract,
++                               std::size_t max_name_length) {
++    constexpr std::string_view kCtrlOpen  = "<|";
++    constexpr std::string_view kCtrlClose = "|>";
++    constexpr std::string_view kBareOpeners[] = {"function=", "invoke=", "parameter=", "param="};
++    constexpr std::string_view kTagOpeners[]  = {"<function",  "<invoke",    "<parameter",
++                                                 "<param",     "function=",  "invoke=",
++                                                 "parameter=", "param="};
++
++    const auto tag_boundary = [](std::string_view text, std::size_t pos) {
++        if (pos == 0) { return true; }
++        std::size_t back = pos;
++        while (back != 0 && is_format_whitespace(text[back - 1])) { --back; }
++        return back != 0 && text[back - 1] == '>';
++    };
++    const auto matches_any = [](std::string_view text, std::size_t pos,
++                                const auto& openers) {
++        return std::any_of(std::begin(openers), std::end(openers), [&](std::string_view opener) {
++            return starts_with_at(text, pos, opener);
++        });
++    };
++
++    std::string repaired;
++    repaired.reserve(region.size());
++    std::size_t pos = 0;
++    while (pos < region.size()) {
++        if (starts_with_at(region, pos, kCtrlOpen) && tag_boundary(region, pos)) {
++            const std::size_t close = region.find(kCtrlClose, pos + kCtrlOpen.size());
++            if (close != std::string_view::npos) {
++                std::size_t after = close + kCtrlClose.size();
++                while (after < region.size() && is_format_whitespace(region[after])) { ++after; }
++                if (after < region.size() && matches_any(region, after, kTagOpeners)) {
++                    pos = after;
++                    continue;
++                }
++            }
++        }
++        if (region[pos] != '<' && tag_boundary(region, pos) &&
++            matches_any(region, pos, kBareOpeners)) {
++            repaired.push_back('<');
++        }
++        repaired.push_back(region[pos]);
++        ++pos;
++    }
++    if (repaired == region) { return {}; }
++
++    std::size_t probe  = 0;
++    const TagForm* form = opened_function(repaired, probe);
++    if (form == nullptr) { return {}; }
++    std::size_t tag_end = 0;
++    const std::string_view name = tag_name(tag_header(repaired, probe, *form, tag_end));
++    if (!valid_function_name(name, max_name_length) ||
++        find_tool_contract(contract, name) == nullptr) {
++        return {};
++    }
++    return repaired;
++}
++
+ ParsedToolCallOutput parse_qwen_tool_call_output(const std::string& text,
+                                                  std::size_t max_tool_name_length,
+                                                  const ToolCallOutputContract& contract) {
+-    std::size_t candidate = find_tool_marker(text, 0);
+-    if (candidate == std::string::npos) { return fallback(text); }
++    // LOCAL FIX (batch 2, A1-A4): with no marker at all, control-token residue and bare
++    // `function=` openers are repaired first; only a repaired region that names a declared tool
++    // is ever used, so prose can never be turned into a call.
++    std::string repaired_storage;
++    std::string_view source(text);
++    std::uint32_t prose_skipped = 0;
++    std::size_t candidate       = find_tool_marker(source, 0, &prose_skipped);
++    if (candidate == std::string::npos) {
++        repaired_storage = repair_tool_region(source, contract, max_tool_name_length);
++        if (repaired_storage.empty()) {
++            ToolCallParseDiagnostics diagnostics;
++            diagnostics.marker_seen           = prose_skipped != 0;
++            diagnostics.prose_markers_skipped = prose_skipped;
++            return fallback(text, diagnostics);
++        }
++        source    = repaired_storage;
++        candidate = find_tool_marker(source, 0);
++        if (candidate == std::string::npos) {
++            ToolCallParseDiagnostics diagnostics;
++            diagnostics.marker_seen           = prose_skipped != 0;
++            diagnostics.prose_markers_skipped = prose_skipped;
++            return fallback(text, diagnostics);
++        }
++    }
+ 
+     ParsedToolCallOutput out;
+-    out.diagnostics.marker_seen = true;
++    out.diagnostics.marker_seen           = true;
++    out.diagnostics.prose_markers_skipped = prose_skipped;
+ 
+     // Generated prose can quote a tool-call marker before the real turn. Try each marker in order
+     // and accept the first region that consumes the response to its end; earlier markers stay
+     // ordinary content. Every attempt can scan to the end of the output, so an output that keeps
+     // repeating the marker is tried only up to a bound. The bound counts from the first marker,
+     // not the last, so no call of a multi-call turn is ever left behind as text.
+-    const std::string_view source(text);
+     const std::size_t first = candidate;
+     std::vector<RawToolCall> raw_calls;
+     std::size_t accepted         = std::string::npos;
+     FallbackReason first_failure = FallbackReason::MalformedStructure;
+     bool first_failure_recorded  = false;
++    // NOTE (batch 1): the attempt bound is a deliberate scan guard pinned by the official tests
++    // ("markers past the attempt bound were still tried"); it stays as it was. The C5 shape (prose
++    // quoting the marker more than kMaxMarkerAttempts times before the real call) is a documented
++    // limitation instead of an unbounded scan.
+     for (std::size_t attempt = 0; candidate != std::string::npos && attempt < kMaxMarkerAttempts;
+          ++attempt) {
+         std::vector<RawToolCall> calls;
+@@ -971,6 +1191,7 @@ ParsedToolCallOutput parse_qwen_tool_call_output(const std::string& text,
+             accepted  = candidate;
+             raw_calls = std::move(calls);
+             out.diagnostics.duplicate_parameters_repaired = parser.duplicate_parameters_repaired();
++            out.diagnostics.ambiguous_parameter_closers  = parser.ambiguous_value_closers();
+             break;
+         }
+         if (!first_failure_recorded) {
+@@ -982,11 +1203,33 @@ ParsedToolCallOutput parse_qwen_tool_call_output(const std::string& text,
+         }
+         candidate = find_tool_marker(text, candidate + 1);
+     }
++    if (accepted == std::string::npos) {
++        // LOCAL FIX (batch 2, A1-A4): repair the first region and give it one strict attempt
++        // before recovery or the text fallback.
++        std::string repaired_region =
++            repair_tool_region(source.substr(first), contract, max_tool_name_length);
++        if (!repaired_region.empty()) {
++            repaired_storage = std::string(source.substr(0, first)) + repaired_region;
++            std::vector<RawToolCall> calls;
++            const QwenToolRegionParser parser(std::string_view(repaired_storage).substr(first),
++                                              max_tool_name_length, contract);
++            if (parser.parse(calls) == FallbackReason::None) {
++                source                                         = repaired_storage;
++                accepted                                       = first;
++                raw_calls                                      = std::move(calls);
++                out.diagnostics.markup_repaired                = true;
++                out.diagnostics.duplicate_parameters_repaired  = parser.duplicate_parameters_repaired();
++                out.diagnostics.ambiguous_parameter_closers    = parser.ambiguous_value_closers();
++            }
++        }
++    }
+     if (accepted == std::string::npos) {
+         // No marker opens a region that parses: recover what the first one's region holds.
+         out.diagnostics.fallback_reason    = first_failure;
+         const std::string_view tool_region = source.substr(first);
+-        if (!region_opens_function(tool_region)) { return fallback(text, out.diagnostics); }
++        if (!region_opens_function(tool_region, contract)) {
++            return fallback(text, out.diagnostics);
++        }
+         out.content = rtrim_format_whitespace(source.substr(0, first));
+         recover_tool_calls(tool_region, max_tool_name_length, contract, out);
+     } else {
+@@ -997,6 +1240,36 @@ ParsedToolCallOutput parse_qwen_tool_call_output(const std::string& text,
+         }
+     }
+ 
++    // LOCAL FIX (batch 1, fence artifact visibility): an unclosed markdown code fence sitting
++    // directly before the region is counted - never removed (same content contract) - so a
++    // fenced call is not silent either.
++    if (const std::size_t fence = unclosed_fence_prefix_bytes(source.substr(0, first));
++        fence != 0) {
++        out.diagnostics.markup_before_call_bytes += static_cast<std::uint32_t>(fence);
++    }
++    // LOCAL FIX (batch 1, silent leak -> visible): the outgoing content boundary is the CONTRACT
++    // (text before the first marker for fallbacks, before the accepted call otherwise; quoted or
++    // broken examples stay in the message - the official tests pin this). What used to be silent
++    // is now counted: markup attempted before the accepted call is reported so the path is
++    // visible in the request log and the operational warning without changing a byte of content.
++    if (accepted != std::string::npos && accepted > first) {
++        const std::string_view between = source.substr(first, accepted - first);
++        const bool carries_tags =
++            between.find("<function") != std::string_view::npos ||
++            between.find("<parameter") != std::string_view::npos ||
++            between.find("<invoke") != std::string_view::npos ||
++            between.find("<param") != std::string_view::npos ||
++            between.find("function=") != std::string_view::npos ||
++            between.find("parameter=") != std::string_view::npos;
++        if (carries_tags) {
++            out.diagnostics.markup_before_call_bytes +=
++                static_cast<std::uint32_t>(accepted - first);
++            // The text itself stays: the official contract keeps everything before the accepted
++            // call in the message (quoted or broken examples are ordinary prose, and the streamed
++            // decoder re-emits this exact span). Visibility, not excision, is the fix for the
++            // previously silent shape.
++        }
++    }
+     out.diagnostics.structured_call_count = static_cast<std::uint32_t>(out.tool_calls.size());
+     out.is_tool_call_response             = true;
+     return out;
+@@ -1043,7 +1316,9 @@ std::string ToolCallOutputDecoder::feed(std::string_view text) {
+                 break;
+             }
+             if (could_open_marker(pending_marker_)) { continue; }
+-            // The byte that ended the candidate can start the next one, so it is read again.
++            // The byte that ended the candidate is dropped here only from the candidate; the
++            // fall-through below still reads it as ordinary text or as the start of the next
++            // candidate.
+             pending_marker_.pop_back();
+             visible.append(trailing_whitespace_);
+             trailing_whitespace_.clear();
+diff --git a/include/ninfer/types.h b/include/ninfer/types.h
+index cb2d08f..ceeb8e2 100644
+--- a/include/ninfer/types.h
++++ b/include/ninfer/types.h
+@@ -694,6 +694,20 @@ struct ToolCallParseDiagnostics {
+     bool malformed_call_reported = false;
+     // Text after the last call; the model is predicting a tool result there, so it is dropped.
+     bool trailing_content_dropped = false;
++    // Markup bytes before the accepted call's marker (a failed region, a quoted example, a fence):
++    // content keeps them per contract, but a nonzero count means this previously silent shape
++    // occurred and is now visible in the request log and the operational warning.
++    std::uint32_t markup_before_call_bytes = 0;
++    // A region was repaired before parsing (control-token residue stripped, a bare
++    // function=/parameter= tag completed). Only set when every un-repaired attempt had failed.
++    bool markup_repaired = false;
++    // Bare <function...> tags skipped because they sit inside prose instead of starting the
++    // response or a paragraph: examples of the format, deliberately not executed. Nonzero means a
++    // shape that used to run as a call is now kept as content.
++    std::uint32_t prose_markers_skipped = 0;
++    // A parameter value that quotes its own closing tag, so the closer was absorbed into the value.
++    // The value is preserved byte-for-byte; the count only makes the ambiguity observable.
++    std::uint32_t ambiguous_parameter_closers = 0;
+ 
+     [[nodiscard]] friend constexpr bool
+     operator==(const ToolCallParseDiagnostics&, const ToolCallParseDiagnostics&) noexcept = default;
+diff --git a/src/serve/request_log.cpp b/src/serve/request_log.cpp
+index 6b76439..905a8f0 100644
+--- a/src/serve/request_log.cpp
++++ b/src/serve/request_log.cpp
+@@ -106,6 +106,10 @@ Json tool_call_parse_json(const ninfer::ToolCallParseDiagnostics& diagnostics) {
+                 {"recovered_call_count", diagnostics.recovered_call_count},
+                 {"malformed_call_reported", diagnostics.malformed_call_reported},
+                 {"trailing_content_dropped", diagnostics.trailing_content_dropped},
++                {"markup_before_call_bytes", diagnostics.markup_before_call_bytes},
++                {"markup_repaired", diagnostics.markup_repaired},
++                {"prose_markers_skipped", diagnostics.prose_markers_skipped},
++                {"ambiguous_parameter_closers", diagnostics.ambiguous_parameter_closers},
+                 {"fallback_reason",
+                  ninfer::tool_call_parse_fallback_reason_name(diagnostics.fallback_reason)}};
+ }
+diff --git a/src/serve/operational_log.cpp b/src/serve/operational_log.cpp
+index 6c88d36..189816c 100644
+--- a/src/serve/operational_log.cpp
++++ b/src/serve/operational_log.cpp
+@@ -330,12 +330,41 @@ OperationalRecord render_request_done(const RequestLogContext& context,
+ std::optional<OperationalRecord> render_tool_call_fallback(const RequestLogContext& context,
+                                                            const GenerationOutcome& outcome) {
+     const ninfer::ToolCallParseFallbackReason reason = outcome.tool_call_parse.fallback_reason;
++    // LOCAL FIX (batch 1, silent leak): a turn that drops attempted markup while still parsing a
++    // call cleanly used to log nothing at all (reason=none). It now warns too.
+     if (!outcome.tool_call_parse.marker_seen ||
+-        reason == ninfer::ToolCallParseFallbackReason::None) {
++        (reason == ninfer::ToolCallParseFallbackReason::None &&
++         outcome.tool_call_parse.markup_before_call_bytes == 0 &&
++         outcome.tool_call_parse.prose_markers_skipped == 0 &&
++         outcome.tool_call_parse.empty_arguments_omitted == 0 &&
++         outcome.tool_call_parse.ambiguous_parameter_closers == 0)) {
+         return std::nullopt;
+     }
+     const ninfer::ToolCallParseDiagnostics& parse = outcome.tool_call_parse;
+     std::string message = "req#" + std::to_string(context.id);
++    if (reason == ninfer::ToolCallParseFallbackReason::None) {
++        // LOCAL FIX (batch 2, E3): a bare <function...> quoted in prose used to run as a call; it
++        // is now kept as content, and this warning is what makes that shape observable.
++        if (parse.prose_markers_skipped != 0) {
++            message += " bare function markup in prose | count=" +
++                       std::to_string(parse.prose_markers_skipped) + ", kept in content";
++        } else if (parse.ambiguous_parameter_closers != 0) {
++            // LOCAL FIX (batch 3, D1): a value that quotes its own closer was absorbed silently.
++            // The value is still byte-for-byte; this warning is what makes the shape observable.
++            message += " ambiguous parameter closer | count=" +
++                       std::to_string(parse.ambiguous_parameter_closers) + ", kept in value";
++        } else if (parse.empty_arguments_omitted != 0) {
++            // LOCAL FIX (batch 3, D2): an empty value for a declared non-string parameter leaves
++            // the key out of the arguments; that omission is a decision, so it is warned about.
++            message += " empty declared parameter omitted | count=" +
++                       std::to_string(parse.empty_arguments_omitted) + ", absent from arguments";
++        } else {
++            message += " tool markup before call | bytes=" +
++                       std::to_string(parse.markup_before_call_bytes) + ", kept in content";
++        }
++        return OperationalRecord{.severity = OperationalSeverity::Warning,
++                                 .message  = std::move(message)};
++    }
+     if (parse.recovered) {
+         message += " tool markup recovered | " +
+                    pretty_code(ninfer::tool_call_parse_fallback_reason_name(reason)) + ", kept " +
+diff --git a/tests/test_tool_call_parser.cpp b/tests/test_tool_call_parser.cpp
+index 7f428b2..65f163b 100644
+--- a/tests/test_tool_call_parser.cpp
++++ b/tests/test_tool_call_parser.cpp
+@@ -655,8 +655,10 @@ int test_recovery_of_strict_failures() {
+                       "an undeclared tool name was not handed to the client");
+ 
+     const std::string invalid_name = tool_call("bad.name", {{"value", "x"}});
++    // CONTRACT (batch 2, E2): an invalid name is echoed back as `intended_function` so the model
++    // learns which name it attempted; the call is still reported as `malformed_tool_call`.
+     failures += check_reported(invalid_name, kLegacyContract,
+-                               ninfer::ToolCallParseFallbackReason::InvalidToolName, "",
++                               ninfer::ToolCallParseFallbackReason::InvalidToolName, "bad.name",
+                                "invalid function-name character was accepted");
+ 
+     const std::string prose = "Qwen wraps calls in <tool_call> tags.";
+@@ -735,10 +737,12 @@ int test_name_limits_and_non_strict_omissions() {
+     int failures = 0;
+     failures += check(anthropic.is_tool_call_response && anthropic.tool_calls.size() == 1,
+                       "128-character Anthropic tool name was rejected");
+-    failures += check_reported(openai, ninfer::ToolCallParseFallbackReason::InvalidToolName, "",
++    // CONTRACT (batch 2, E2): the rejected name is echoed back, capped at 64 bytes.
++    const std::string attempted(64, 'a');
++    failures += check_reported(openai, ninfer::ToolCallParseFallbackReason::InvalidToolName, attempted,
+                                "128-character OpenAI tool name was accepted");
+-    failures += check_reported(too_long, ninfer::ToolCallParseFallbackReason::InvalidToolName, "",
+-                               "129-character Anthropic tool name was accepted");
++    failures += check_reported(too_long, ninfer::ToolCallParseFallbackReason::InvalidToolName,
++                               attempted, "129-character Anthropic tool name was accepted");
+ 
+     const std::string definition = tool_definition(
+         "optional", Json{{"value", Json{{"type", "string"}}}}, Json::array({"value"}));
+@@ -1423,6 +1427,72 @@ int test_constrained_tool_envelope() {
+     return failures;
+ }
+ 
++// LOCAL TEST (batch 4, G2): nothing asserted the combination of a recovered call and a non-None
++// fallback reason, so a regression that reported reason=none for a recovered region would have
++// gone unnoticed. Both must be true at once: the calls stand, and the reason says why the strict
++// pass refused the region.
++int test_recovery_reports_both_call_and_reason() {
++    const auto contract = contract_for("configure", Json{{"value", Json{{"type", "string"}}}});
++    // The parameter is closed by its function, so the strict pass refuses the region and the
++    // lenient pass reads the call.
++    const std::string text =
++        "<tool_call>\n<function=configure>\n<parameter=value>\nx\n</function>\n</tool_call>";
++    const auto parsed = fi::parse_qwen_tool_call_output(text, 64, contract);
++
++    int failures = 0;
++    failures += check(parsed.is_tool_call_response && parsed.tool_calls.size() == 1 &&
++                          parsed.diagnostics.recovered &&
++                          parsed.diagnostics.recovered_call_count == 1 &&
++                          parsed.diagnostics.fallback_reason !=
++                              ninfer::ToolCallParseFallbackReason::None,
++                      "a recovered call did not report why the strict pass refused it");
++    if (parsed.tool_calls.size() == 1) {
++        failures += check(parsed.tool_calls.front().arguments_json == "{\"value\":\"x\"}",
++                          "the recovered call lost its arguments");
++    }
++    return failures;
++}
++
++// LOCAL TEST (batch 4, G3): the streaming decoder was suspected of dropping the byte that ends a
++// pending marker. Fed the same text at every chunk size, the visible bytes plus the terminal
++// content must equal the whole-response parse at every split, including splits inside a marker.
++int test_streaming_never_drops_bytes_at_any_chunk_size() {
++    auto contract = output_contract_for("configure", Json{{"value", Json{{"type", "string"}}}});
++    const std::string call =
++        "<tool_call>\n<function=configure>\n<parameter=value>\nx\n</parameter>\n</function>\n"
++        "</tool_call>";
++    const std::vector<std::string> cases = {
++        "the quick brown fox jumps over the lazy dog",
++        "I will configure it now.\n" + call,
++        call,
++        call + "\n" + call,
++        "a < b << c <f <fu <fun and nothing else",
++        "prefix <tool_ca",
++        "prefix <tool_call>",
++        "<tool_call>\n<function=configure>\n<parameter=value>\nliteral </function> and "
++        "<parameter=x>\n</parameter>\n</function>\n</tool_call>",
++        "answer\n\n   " + call,
++        "<> << >> <x> </x> < / > <?"};
++
++    const auto whole_contract = contract_for("configure", Json{{"value", Json{{"type", "string"}}}});
++    int failures               = 0;
++    for (const std::string& text : cases) {
++        const auto whole = fi::parse_qwen_tool_call_output(text, 64, whole_contract);
++        for (std::size_t chunk = 1; chunk <= text.size() && chunk <= 23; ++chunk) {
++            fi::ToolCallOutputDecoder decoder(contract, 64);
++            std::string visible;
++            for (std::size_t offset = 0; offset < text.size(); offset += chunk) {
++                visible += decoder.feed(std::string_view(text).substr(offset, chunk));
++            }
++            auto terminal = decoder.finish();
++            failures += check(visible + terminal.content == whole.content &&
++                                  terminal.tool_calls.size() == whole.tool_calls.size(),
++                              "streaming at a chunk size lost or duplicated bytes");
++        }
++    }
++    return failures;
++}
++
+ int main() {
+     int failures = 0;
+     failures += test_duplicate_parameter_keeps_last_value();
+@@ -1460,6 +1530,8 @@ int main() {
+     failures += test_mismatched_closing_tags_reported();
+     failures += test_harness_forms_recovery_and_streaming();
+     failures += test_claude_code_plan_and_task_create_exact_repro();
++    failures += test_recovery_reports_both_call_and_reason();
++    failures += test_streaming_never_drops_bytes_at_any_chunk_size();
+     if (failures == 0) { std::cout << "ok\n"; }
+     return failures == 0 ? 0 : 1;
+ }

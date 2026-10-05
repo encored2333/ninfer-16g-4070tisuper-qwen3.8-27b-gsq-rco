@@ -12,6 +12,9 @@
 | `src/serve/operational_log.cpp` | 控制台告警 |
 | `tests/test_tool_call_parser.cpp` | 官方单元测试（新增 2 例、修订 2 处契约） |
 
+上述五个文件修改后的完整内容在 `docs/patches/` 下，逐行改动见同目录的
+`tool-call-parser-hardening.diff`（可直接 `git apply` 到上游同名文件）。
+
 ---
 
 ## 1. 治理原则
