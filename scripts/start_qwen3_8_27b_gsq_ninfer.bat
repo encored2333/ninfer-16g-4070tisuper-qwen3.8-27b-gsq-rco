@@ -40,7 +40,8 @@ ninfer-serve.exe "D:\ninfer\converted-models\Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.ninfe
   --spec mtp --draft-tokens 4 --adaptive-mtp --lookup-ngram 31 ^
   --temperature 1 --top-p 0.95 --top-k 20 --min-p 0 ^
   --preserve-thinking --default-reasoning-effort xhigh ^
-  --port 8081 --log-stats-interval-ms 1000 --log-colours off
+  --port 8081 --log-stats-interval-ms 1000 --log-colours off ^
+  --request-log-jsonl D:\ninfer\logs\requests-ninfer.jsonl --request-log-max-mib 64
 REM --reasoning_effort: "medium"
 
 echo.

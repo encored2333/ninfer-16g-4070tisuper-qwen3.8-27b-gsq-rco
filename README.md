@@ -32,7 +32,9 @@ RTX 40 系用户没有官方预编译引擎可用（现成引擎只含 RTX 50 �
 ├── docs/
 │   ├── 部署文档.md        ← 主文档：依赖全集 / 模型转换 / 源码编译 / 组装 / 启动调优 / 换显卡适配 / 20 条踩坑
 │   ├── 性能实测.md        ← 全套 bench 数据与官方参考对比、复测方法
-│   └── 模型转换指南.md    ← GSQ-RCO 原版 GGUF → .ninfer 完整方法（哈希校验 / 双变体 / 常见坑）
+│   ├── 模型转换指南.md    ← GSQ-RCO 原版 GGUF → .ninfer 完整方法（哈希校验 / 双变体 / 常见坑）
+│   ├── 工具调用解析加固-A至G类问题与修复.md  ← 解析器加固：A–G 类畸形形态逐条修复 / 两个合同变更 / 新增诊断字段
+│   └── patches/            ← 修复后完整源文件（tool_call_parser.cpp / types.h / 日志与测试）
 ├── scripts/
 │   ├── fetch-asset.bat            vcpkg 资产下载器（代理→镜像→直连三级回退，国内网络救星）
 │   ├── build-sm89.bat             一键 CMake 配置 + CUDA 算子编译 + nvprune + 链接

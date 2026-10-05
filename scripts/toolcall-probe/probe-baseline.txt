@@ -1,0 +1,240 @@
+=== A1 im_start before function, complete body
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=get_weather args="{\"city\":\"Paris\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== A2 im_start on the same line, complete body
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=get_weather args="{\"city\":\"Paris\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== A3 im_end/space pollution before function tag
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=get_weather args="{\"city\":\"Paris\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== A4 bare function preceded by control token, no wrapper
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=get_weather args="{\"city\":\"Paris\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== B1 tool_call closed before function
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"intended_function\":\"configure\",\"error\":\"The tool call markup was malformed, so nothing was executed. Issue the call again with every parameter opened and closed by its own tag.\"}"
+  reason=malformed_structure marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== B2 function closed, tool_call tag never emitted
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{\"value\":\"x\"}"
+  reason=malformed_structure marker_seen=1 recovered=1 recovered_call_count=1 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== B3 function close missing, tool_call closed
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"intended_function\":\"configure\",\"error\":\"The output ended before the tool call was closed, so nothing was executed. Issue the call again; if it was long, split the work into smaller calls.\"}"
+  reason=malformed_structure marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== B4 empty wrapper
+  is_tool_call_response=0 content="<tool_call>\n</tool_call>" content_size=24 calls=0
+  reason=malformed_structure marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=0 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== B5 only the wrapper opener
+  is_tool_call_response=0 content="<tool_call>" content_size=11 calls=0
+  reason=malformed_structure marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=0 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== B6 only the wrapper opener plus text
+  is_tool_call_response=0 content="<tool_call> hi" content_size=14 calls=0
+  reason=malformed_structure marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=0 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== B7 truncated function opener without '>'
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"error\":\"The output ended before the tool call was closed, so nothing was executed. Issue the call again; if it was long, split the work into smaller calls.\"}"
+  reason=invalid_tool_name marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== B8 truncated function opener with partial name
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"error\":\"The output ended before the tool call was closed, so nothing was executed. Issue the call again; if it was long, split the work into smaller calls.\"}"
+  reason=invalid_tool_name marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== B9 truncated parameter opener without '>'
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"intended_function\":\"configure\",\"error\":\"The output ended before the tool call was closed, so nothing was executed. Issue the call again; if it was long, split the work into smaller calls.\"}"
+  reason=malformed_structure marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== B10 empty output
+  is_tool_call_response=0 content="" content_size=0 calls=0
+  reason=none marker_seen=0 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=0 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== B11 only a marker, nothing else
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"intended_function\":\"configure\",\"error\":\"The output ended before the tool call was closed, so nothing was executed. Issue the call again; if it was long, split the work into smaller calls.\"}"
+  reason=malformed_structure marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== C1 value holds </parameter> only
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=bash args="{\"command\":\"echo\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== C2 value holds an unbalanced <function= opener
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=bash args="{\"command\":\"echo <function=fake> tail\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== C3 value holds </tool_call> text
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=bash args="{\"command\":\"echo </tool_call> tail\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== C4 legacy contract, value holds <tool_call>
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=bash args="{\"command\":\"echo <tool_call> tail\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== C5 value holds a nested balanced <parameter=..>..</parameter>
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=bash args="{\"command\":\"python3 - <<'PY'\\npattern = r'<parameter=edits>\\\\n(.*?)\\\\n</parameter>'\\nPY\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== D1 two functions inside one tool_call
+  is_tool_call_response=1 content="" content_size=0 calls=2
+    call name=configure args="{\"value\":\"1\"}"
+    call name=configure args="{\"value\":\"2\"}"
+  reason=malformed_structure marker_seen=1 recovered=1 recovered_call_count=1 malformed_reported=0 trailing_dropped=1 structured_count=2 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== D2 two parameters-less functions inside one tool_call
+  is_tool_call_response=1 content="" content_size=0 calls=2
+    call name=configure args="{}"
+    call name=configure args="{}"
+  reason=malformed_structure marker_seen=1 recovered=1 recovered_call_count=1 malformed_reported=0 trailing_dropped=1 structured_count=2 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== D3 two wrappers, both complete
+  is_tool_call_response=1 content="" content_size=0 calls=2
+    call name=configure args="{\"value\":\"1\"}"
+    call name=configure args="{\"value\":\"2\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=2 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== D4 bare functions without any wrapper
+  is_tool_call_response=1 content="" content_size=0 calls=2
+    call name=configure args="{\"value\":\"1\"}"
+    call name=configure args="{\"value\":\"2\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=2 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== E1 markdown fence around the call
+  is_tool_call_response=1 content="```" content_size=3 calls=1
+    call name=bash args="{\"command\":\"ls\"}"
+  reason=trailing_content marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=0 trailing_dropped=1 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== E2 HTML-escaped marker in prose only
+  is_tool_call_response=0 content="Use &lt;tool_call&gt; to call tools." content_size=36 calls=0
+  reason=none marker_seen=0 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=0 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== E3 CDATA inside a declared string value
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"intended_function\":\"agent\",\"error\":\"The tool call markup was malformed, so nothing was executed. Issue the call again with every parameter opened and closed by its own tag.\"}"
+  reason=malformed_structure marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== E4 XML entities inside a declared string value
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=agent args="{\"task\":\"a &lt; b &amp;&amp; c &gt; d\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== F1 parameter '=' opener, 'name' attribute opener in one call
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=bash args="{\"command\":\"ls\",\"mode\":\"fast\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=1 dup_repaired=0 forced_closed=0
+=== F2 function= opener closed by </invoke>
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"intended_function\":\"bash\",\"error\":\"The output ended before the tool call was closed, so nothing was executed. Issue the call again; if it was long, split the work into smaller calls.\"}"
+  reason=malformed_structure marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== F3 invoke opener closed by </function>
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"intended_function\":\"bash\",\"error\":\"The output ended before the tool call was closed, so nothing was executed. Issue the call again; if it was long, split the work into smaller calls.\"}"
+  reason=malformed_structure marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== F4 Qwen function form inside a function_calls container
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=bash args="{\"command\":\"ls\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== F5 tool_call wrapper inside function_calls container
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=bash args="{\"command\":\"ls\"}"
+  reason=malformed_structure marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== F6 <function NAME> with a space but no '=' or name attribute
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=bash args="{\"command\":\"ls\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== G1 case-different undeclared name (declared Bash and bash, called BASH)
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=BASH args="{\"command\":\"ls\"}"
+  reason=undeclared_tool marker_seen=1 recovered=1 recovered_call_count=1 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== G2 tool name containing a space
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"intended_function\":\"my tool\",\"error\":\"The tool call markup was malformed, so nothing was executed. Issue the call again with every parameter opened and closed by its own tag.\"}"
+  reason=invalid_tool_name marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== G3 tool name with a slash
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"intended_function\":\"my/tool\",\"error\":\"The tool call markup was malformed, so nothing was executed. Issue the call again with every parameter opened and closed by its own tag.\"}"
+  reason=invalid_tool_name marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== G4 non-ASCII tool name
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"intended_function\":\"工具\",\"error\":\"The tool call markup was malformed, so nothing was executed. Issue the call again with every parameter opened and closed by its own tag.\"}"
+  reason=invalid_tool_name marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== G5 name attribute with extra attributes before it
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=bash args="{\"command\":\"ls\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== H1 parameters in an order other than the schema's
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=agent args="{\"mode\":\"read\",\"task\":\"do it\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== H2 extra undeclared parameter next to declared ones
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{\"value\":\"x\",\"extra\":\"y\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=1 dup_repaired=0 forced_closed=0
+=== H3 parameter tag without a name
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=malformed_tool_call args="{\"intended_function\":\"configure\",\"error\":\"The tool call markup was malformed, so nothing was executed. Issue the call again with every parameter opened and closed by its own tag.\"}"
+  reason=malformed_structure marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=1 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== H4 duplicate parameter, conflicting values
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{\"value\":\"second\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=1 forced_closed=0
+=== H5 value containing </parameter> then real close (ambiguous closer)
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{\"value\":\"a\\n</parameter>\\nb\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== I1 legacy policy with a JSON object value
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=t args="{\"v\":{\"x\":1}}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== I2 legacy policy with a bare true value
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=t args="{\"v\":true}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== I3 legacy policy with a bare null value
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=t args="{\"v\":null}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== I4 legacy policy with a JSON array value
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=t args="{\"v\":[\"a\",2]}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== I5 declared integer receiving '007'
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{\"value\":\"007\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=1 dup_repaired=0 forced_closed=0
+=== I6 declared integer receiving '+7'
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{\"value\":\"+7\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=1 dup_repaired=0 forced_closed=0
+=== I7 declared integer receiving '0x10'
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{\"value\":\"0x10\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=1 dup_repaired=0 forced_closed=0
+=== I8 declared integer receiving a 20-digit integer
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{\"value\":12345678901234567890}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== I9 declared integer receiving '1e400'
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{\"value\":\"1e400\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=1 dup_repaired=0 forced_closed=0
+=== I10 declared integer receiving '1E+2'
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{\"value\":1E+2}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== I11 declared integer receiving ' 7 ' with surrounding spaces
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{\"value\":7}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== I12 declared integer receiving an empty value
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=1 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== J1 broken first call, complete second call
+  is_tool_call_response=1 content="<tool_call>\n<function=configure>\n<parameter=value>\nleaked\n</tool_call>" content_size=70 calls=1
+    call name=configure args="{\"value\":\"ok\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== J2 complete call, then a second complete call
+  is_tool_call_response=1 content="" content_size=0 calls=1
+    call name=configure args="{\"value\":\"1\"}"
+  reason=trailing_content marker_seen=1 recovered=1 recovered_call_count=0 malformed_reported=0 trailing_dropped=1 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== J3 prose quoting the opener, then a real call
+  is_tool_call_response=1 content="Avoid `<tool_call>\n<function=NAME>`; then real:" content_size=47 calls=1
+    call name=configure args="{\"value\":\"ok\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+=== J4 TaskCreate plan repro with the declared tool
+  is_tool_call_response=1 content="Plan ready:" content_size=11 calls=1
+    call name=TaskCreate args="{\"description\":\"do it\"}"
+  reason=none marker_seen=1 recovered=0 recovered_call_count=0 malformed_reported=0 trailing_dropped=0 structured_count=1 empty_omitted=0 schema_mismatch=0 dup_repaired=0 forced_closed=0
+probe done
